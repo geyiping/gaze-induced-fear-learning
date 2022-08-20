@@ -1,4 +1,5 @@
 % Gazelearning
+%This is the code for gazelearning, Yiping Ge, Institude of Psychology, CAS
 Screen('Preference', 'SkipSyncTests', 1)
 [subject, Gaborpatch, ntrials] = GazeLearning_inputsubinfo;
 if ~exist('subject','var')
