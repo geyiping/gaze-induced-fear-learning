@@ -1,0 +1,218 @@
+% Gazelearning
+Screen('Preference', 'SkipSyncTests', 1)
+[subject, Gaborpatch, ntrials] = GazeLearning_inputsubinfo;
+if ~exist('subject','var')
+    subject='test';
+end
+if ~exist('ntrials','var')
+    ntrials=4;
+end
+%% Prepare stimuli
+AssertOpenGL;
+whichscreen=max(Screen('Screens'));
+% whichscreen=1;
+black=BlackIndex(whichscreen);
+white=WhiteIndex(whichscreen);
+gray=round((black+white)/2);
+
+% Screen('Resolution',whichscreen,[],[],60);
+[windowPtr, rect]=Screen('OpenWindow',whichscreen,gray);
+Screen('BlendFunction', windowPtr, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+[centerx,centery]=RectCenter(rect);
+offset=200;
+
+defaultwin=Screen('MakeTexture', windowPtr, imread('Frame.bmp'));
+
+targetwin(1)=Screen('MakeTexture', windowPtr, imread('Cartoon1.bmp')); 
+targetwin(2)=Screen('MakeTexture', windowPtr, imread('Cartoon2.bmp')); 
+% targetwin(1)=Screen('MakeTexture', windowPtr, imread('pic1.jpg')); 
+% targetwin(2)=Screen('MakeTexture', windowPtr, imread('pic2.jpg'));
+tarrect=CenterRect([0 0 100 120],rect);
+% gazerect=CenterRect([0 0 160 200],rect);
+gazerect=CenterRect([0 0 150 180],rect);
+
+fps=Screen('NominalFrameRate',windowPtr);
+ifi=Screen('GetFlipInterval',windowPtr);
+
+straightgazeduration=0.5; %sec
+origazeduration=0.2;
+avertedgazeduration=0.3; %sec
+isiduration=0.1; %sec
+tarduration=0.5; %sec
+
+KbName('UnifyKeyNames');
+Key1 = KbName('LeftArrow');
+Key2 = KbName('RightArrow');
+escapeKey = KbName('ESCAPE');
+spaceKey = KbName('SPACE');
+[touch, secs, keyCode] = KbCheck;
+
+cuedir=[1:2]; %cue direction: left vs. right
+cartoon=[1:2]; %光栅方向: horizontal vs. vertical
+Faceid=[1:4]; % face id
+emotions=[1:2]; %情绪：happy vs. fearful
+% stimseq=zeros(ntrials*length(cuedir)*length(Gaborori)*length(Faceid),3);
+% factor1=reshape(repmat([cuedir], length(Gaborori)*length(Faceid),1), length(cuedir)*length(Gaborori)*length(Faceid),1 );
+% factor2=repmat(reshape(repmat([Gaborori], length(Faceid),1), length(Gaborori)*length(Faceid),1 ), length(cuedir),1);
+% factor3=repmat([Faceid]', length(cuedir)*length(Gaborori),1);
+
+stimseq=zeros(ntrials*length(cuedir)*length(cartoon)*length(Faceid)*length(emotions),4);
+factor1=reshape(repmat([cuedir], length(cartoon)*length(Faceid)*length(emotions),1), length(emotions)*length(cuedir)*length(cartoon)*length(Faceid),1 );
+factor2=repmat(reshape(repmat([cartoon], length(Faceid),1), length(cartoon)*length(Faceid),1 ), length(cuedir)*length(emotions),1);
+factor3=repmat([Faceid]', length(cuedir)*length(cartoon)*length(emotions),1);
+factor4 = [ones(64,1);repmat(2,64,1)];
+
+
+stimseq(:,1)=repmat(factor1,ntrials,1);
+stimseq(:,2)=repmat(factor2,ntrials,1);
+stimseq(:,3)=repmat(factor3,ntrials,1);
+stimseq(:,4) = repmat(factor4,ntrials/4,1);
+
+stimseq=stimseq(Shuffle(1:size(stimseq,1)),:);
+results=zeros(size(stimseq,1),6);
+
+%%%%%%%%%% load stimuli %%%%%%%%%%
+dir_string=['l' 'r' ];
+oridir_string=['s'];
+emo_string=['h' 'f' ];
+oriemo_string=['n'];
+oricuewin=cell(length(Faceid), length(oriemo_string), length(oridir_string)); 
+origazecuewin=cell(length(Faceid), length(oriemo_string), length(dir_string)); 
+cuewin=cell(length(Faceid), length(emo_string), length(dir_string)); % 3 means left, right & straight
+
+for face_id=1:length(Faceid)
+    for oriemo=1:length(oriemo_string)
+    for oridir=1:length(oridir_string) 
+        FileName1=sprintf('faces\\%d_%c_%c.jpg', face_id,oriemo_string(oriemo),oridir_string(oridir));
+        oricuewin{face_id,oriemo,oridir}=Screen ('MakeTexture', windowPtr, imread (FileName1));
+    end
+    end
+    
+    for oriemo=1:length(oriemo_string)
+    for origazedir=1:length(dir_string) 
+        FileName2=sprintf('faces\\%d_%c_%c.jpg', face_id,oriemo_string(oriemo),dir_string(origazedir));
+        origazecuewin{face_id,oriemo,origazedir}=Screen ('MakeTexture', windowPtr, imread (FileName2));
+    end
+    end
+    
+    for emo=1:length(emo_string)
+    for dir=1:length(dir_string)
+        FileName3=sprintf('faces\\%d_%c_%c.jpg', face_id,emo_string(emo),dir_string(dir));
+        cuewin{face_id,emo,dir}=Screen ('MakeTexture', windowPtr, imread (FileName3));
+    end
+    end
+end
+
+%% Show stimuli
+HideCursor;
+Screen(windowPtr,'FillRect',gray);
+Screen('Flip', windowPtr);
+introwin=Screen('MakeTexture', windowPtr, imread('intro.bmp'));
+intro=['Press space key to start ...'];
+message=ShowInstruction(windowPtr, rect, intro, spaceKey, gray, white,introwin);
+
+if message==1
+    Screen('CloseAll');
+    return
+end
+
+oldPriority=Priority(MaxPriority(windowPtr));
+tardirection=1;
+for trial=1:size(stimseq,1)
+    Screen('DrawTexture',windowPtr,defaultwin);
+    vbl = Screen('Flip', windowPtr);
+    
+    WaitSecs(1);
+    results(trial,1:4)=stimseq(trial,1:4);
+    
+    if Gaborpatch ==1
+        if stimseq(trial,2)==stimseq(trial,4)
+            tardirection=stimseq(trial,1);
+        else
+            tardirection=3-stimseq(trial,1);
+        end
+%     else
+%         if stimseq(trial,2)~==stimseq(trial,4)
+%             tardirection=stimseq(trial,1);
+%         else
+%             tardirection=3-stimseq(trial,1);
+%             
+%         end
+    end
+    
+    if tardirection==1
+        taroffset=-offset;
+    else
+        taroffset=offset;
+    end
+    
+    % draw 默认的图片
+    Screen('DrawTexture',windowPtr,defaultwin);
+    vbl = Screen('Flip', windowPtr);
+    
+    %show gaze
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,oricuewin{stimseq(trial,3),1},[],gazerect);
+    vbl = Screen('Flip', windowPtr);
+    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,origazecuewin{stimseq(trial,3),1,stimseq(trial,1)},[],gazerect);
+    vbl = Screen('Flip', windowPtr,vbl + (fps*straightgazeduration)*ifi);
+
+    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,cuewin{stimseq(trial,3),stimseq(trial,4),stimseq(trial,1)},[],gazerect);
+    vbl = Screen('Flip',windowPtr,vbl + (fps*origazeduration)*ifi);
+
+%     %isi
+%     Screen('DrawTexture',windowPtr,defaultwin);
+%     vbl = Screen('Flip',windowPtr,vbl + (fps*avertedgazeduration-0.5)*ifi);
+    
+    %show target
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,cuewin{stimseq(trial,3),stimseq(trial,4),stimseq(trial,1)},[],gazerect);
+    Screen('DrawTexture',windowPtr,targetwin(stimseq(trial,2)),[],OffsetRect(tarrect,taroffset,0));
+%     vbl = Screen('Flip',windowPtr,vbl + (fps*isiduration-0.5)*ifi);
+    vbl = Screen('Flip', windowPtr,vbl + (fps*avertedgazeduration)*ifi);
+    
+    trialtime=GetSecs;
+    
+    while ~(touch==1 && (keyCode(Key1) || keyCode(Key2) || keyCode(escapeKey)))
+        [touch, secs, keyCode] = KbCheck;
+    end
+    
+    % show default window
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('Flip',windowPtr);
+    
+    if (keyCode(Key1) && tardirection==1) || (keyCode(Key2) && tardirection==2)
+        results(trial,5)=1;%ACC
+        results(trial,6)=secs-trialtime;%RT
+    elseif keyCode(escapeKey)
+        fprintf('quitting program by user!\n');
+        break;
+    else
+        results(trial,6)=secs-trialtime;
+    end
+    touch=0;
+    
+    if mod(trial,32)==0 && trial~=size(stimseq,1)
+        msg=['Take a break and press space key to continue ...'];
+        errinfo=ShowInstruction_UMNVAL(windowPtr, rect, msg, spaceKey, gray, white, -200);
+        if errinfo==1
+            ShowCursor;
+            Screen('CloseAll');
+            return
+        end
+        Screen('DrawTexture',windowPtr,defaultwin);
+        vbl=Screen('Flip',windowPtr);
+    end
+end
+
+Priority(oldPriority);
+ShowCursor;
+Screen('CloseAll');
+datafile=sprintf('Data\\%s_%s_%s',subject,mfilename,datestr(now,30));
+save(datafile,'results','stimseq','ntrials','Gaborpatch');
+GazeLearning_Analysis(datafile);
+return
