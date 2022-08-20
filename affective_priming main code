@@ -1,4 +1,5 @@
 %% AffectivePriming
+%% This is the code for affective_priming, Yiping Ge, Institude of Psychology, CAS
 Screen('Preference', 'SkipSyncTests', 1)
 [subject,ntrials] = AffectivePriming_inputsubinfo;
 if ~exist('subject','var')
