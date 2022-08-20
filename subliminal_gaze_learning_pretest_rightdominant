@@ -1,0 +1,158 @@
+% Gazelearning 
+% This is the code for pre-test of unconciously gaze learning, take the example of people with right-dominant-eye
+% Yiping Ge, Institude of Psychology, CAS
+Screen('Preference', 'SkipSyncTests', 1)
+[subject] = GazeLearning_inputsubinfo1;
+if ~exist('subject','var')
+    subject='test';
+end
+%% Prepare stimuli
+AssertOpenGL;
+whichscreen=max(Screen('Screens'));
+% whichscreen=2;
+black=BlackIndex(whichscreen);
+white=WhiteIndex(whichscreen);
+gray=round((black+white)/2);
+
+% Screen('Resolution',whichscreen,[],[],60);
+[windowPtr, rect]=Screen('OpenWindow',whichscreen,gray);
+Screen('BlendFunction', windowPtr, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+[centerx,centery]=RectCenter(rect);
+NoiseSizex=124;
+NoiseSizey=264;
+
+% frame=imread('Frame.bmp');
+% framenew=imresize(frame,1.5);
+% defaultwin=Screen('MakeTexture', windowPtr, framenew);
+defaultwin=Screen('MakeTexture', windowPtr, imread('Frame.bmp'));
+defaultwin2=Screen('MakeTexture', windowPtr, imread('Frame2.bmp'));
+
+Noise=GenerateDynamicCFS_UMNVAL(windowPtr, NoiseSizex, NoiseSizey, 100, gray, white);
+for i=1:100
+CFS(i)=Screen('MakeTexture', windowPtr, Noise(:,:,:,i));  
+end
+
+framerect=CenterRect([0 0 450 800],rect);
+gazerect=CenterRect([0 0 225*0.5 240],rect);
+cfsrect=CenterRect([0 0 NoiseSizex NoiseSizey],rect);
+
+fps=Screen('NominalFrameRate',windowPtr);
+ifi=Screen('GetFlipInterval',windowPtr);
+showframe=round(fps*100/1000); 
+
+duration=0.3;
+cueduration=1.2; %sec
+
+KbName('UnifyKeyNames');
+Key1 = KbName('B');
+Key2 = KbName('SPACE');
+escapeKey = KbName('ESCAPE');
+spaceKey = KbName('SPACE');
+[touch, secs, keyCode] = KbCheck;
+
+
+Picid=[1:2];
+stimseq=zeros(6*length(Picid),1);
+factor1 = [ones(6,1);repmat(2,6,1)];
+stimseq(:,1)=repmat(factor1,1,1);
+stimseq=stimseq(Shuffle(1:size(stimseq,1)),:);
+results=zeros(size(stimseq,1),3);
+
+cuewin=cell(length(Picid));
+for pic_id=1:length(Picid)
+    FileName1=sprintf('faces\\%d.jpg', pic_id);
+        cuewin{pic_id}=Screen ('MakeTexture', windowPtr, imread (FileName1));
+end
+
+%% Show stimuli
+HideCursor;
+Screen(windowPtr,'FillRect',gray);
+Screen('Flip', windowPtr);
+introwin=Screen('MakeTexture', windowPtr, imread('blank.bmp'));
+intro=['rest ...'];
+message=ShowInstruction(windowPtr, rect, intro, spaceKey, gray, white,introwin);
+
+ if message==1
+    Screen('CloseAll');
+     return
+ end
+
+oldPriority=Priority(MaxPriority(windowPtr));
+
+for trial=1:size(stimseq,1)
+%     Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,-480,0));
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,+480,0));
+    vbl = Screen('Flip', windowPtr);
+    
+    WaitSecs(1);
+    results(trial,1:1)=stimseq(trial,1:1);
+ 
+   t=linspace(0,0.4,duration*10);
+  for i=1:round(duration*10)
+    temp=RandSample(1:100);
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,-480,0));
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,+480,0));
+    Screen('DrawTexture',windowPtr,CFS(temp),[],OffsetRect(cfsrect,+480,0));
+    Screen('BlendFunction',windowPtr,'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
+    Screen('DrawTexture',windowPtr,cuewin{stimseq(trial,1),1},[], OffsetRect(gazerect,480,0),[],[],t(i));
+     vbl = Screen('Flip', windowPtr, vbl + (showframe-0.5)*ifi);
+ end     
+
+ for i=1:round(cueduration*10) 
+    temp=RandSample(1:100);
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,-480,0));
+    Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,+480,0));
+    Screen('DrawTexture',windowPtr,CFS(temp),[], OffsetRect(cfsrect,+480,0));
+    Screen('BlendFunction',windowPtr,'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
+    Screen('DrawTexture',windowPtr,cuewin{stimseq(trial,1),1},[], OffsetRect(gazerect,-480,0),[],[],0.4);
+     vbl = Screen('Flip', windowPtr, vbl + (showframe-0.5)*ifi);
+ end  
+
+ 
+ touch=0;
+ trialtime=GetSecs;
+ while touch==0
+    temp=RandSample(1:100);
+    Screen('DrawTexture',windowPtr,defaultwin2,[], OffsetRect(framerect,-480,0));
+    Screen('DrawTexture',windowPtr,defaultwin2,[], OffsetRect(framerect,+480,0));
+    vbl = Screen('Flip', windowPtr, vbl + cueduration*ifi);
+   for w=1:100
+    [touch, secs, keyCode] = KbCheck;
+   end
+ end
+ 
+    
+    if (keyCode(Key1) && stimseq(trial,1)==1) || (keyCode(Key2) && stimseq(trial,1)==2)
+        results(trial,2)=1;%ACC
+        results(trial,3)=secs-trialtime;%RT
+    elseif keyCode(escapeKey)
+        fprintf('quitting program by user!\n');
+        break;
+    else
+        results(trial,3)=secs-trialtime;
+    end
+    touch=0;
+    
+    if mod(trial,30)==0 && trial~=size(stimseq,1)
+        msg=['Take a break and press space key to continue ...'];
+        errinfo=ShowInstruction_UMNVAL(windowPtr, rect, msg, spaceKey, gray, white, -200);
+        if errinfo==1
+            ShowCursor;
+            Screen('CloseAll');
+            return
+        end
+        
+     Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,-480,0));
+     Screen('DrawTexture',windowPtr,defaultwin,[], OffsetRect(framerect,+480,0));
+     vbl=Screen('Flip',windowPtr);
+    end
+end
+
+Priority(oldPriority);
+ShowCursor;
+Screen('CloseAll');
+datafile=sprintf('pretestdata\\%s_%s_%s',subject,mfilename,datestr(now,30));
+save(datafile,'results','stimseq');
+GazeLearning_Analysis_pretest(datafile); 
+return
