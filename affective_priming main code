@@ -1,0 +1,205 @@
+%% AffectivePriming
+Screen('Preference', 'SkipSyncTests', 1)
+[subject,ntrials] = AffectivePriming_inputsubinfo;
+if ~exist('subject','var')
+    subject='test';
+end
+
+if ~exist('ntrials','var')
+    ntrials=30;
+end
+
+%% Prepare stimuli
+AssertOpenGL;
+whichscreen=max(Screen('Screens'));
+% whichscreen=1;
+black=BlackIndex(whichscreen);
+white=WhiteIndex(whichscreen);
+gray=round((black+white)/2);
+
+% Screen('Resolution',whichscreen,[],[],60);
+[windowPtr, rect]=Screen('OpenWindow',whichscreen,gray);
+Screen('BlendFunction', windowPtr, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+[centerx,centery]=RectCenter(rect);
+
+defaultwin=Screen('MakeTexture', windowPtr, imread('Frame.bmp'));
+
+targetwin(1)=Screen('MakeTexture', windowPtr, imread('Cartoon1.bmp')); 
+targetwin(2)=Screen('MakeTexture', windowPtr, imread('Cartoon2.bmp')); 
+
+tarrect=CenterRect([0 0 100 120],rect);
+
+fps=Screen('NominalFrameRate',windowPtr);
+ifi=Screen('GetFlipInterval',windowPtr);
+
+%%%%%%%%%% load word stimuli %%%%%%%%%%
+KbName('UnifyKeyNames');
+Key1 = KbName('C');
+Key2 = KbName('B');
+escapeKey = KbName('ESCAPE');
+spaceKey = KbName('SPACE');
+[touch, secs, keyCode] = KbCheck;
+
+Cartoon=[1:2]; %cartoon picture 1vs2
+wordvalence=[1:2]; %word valence: positive vs. negative
+ImgSeq=[1:30]; 
+
+ImageSequences=reshape(repmat(ImgSeq, ntrials/length(ImgSeq), 1), 1,ntrials);
+
+ShuffledImgSeq=cell(length(Cartoon), length(wordvalence));
+% prepare all shuffled img seq
+for i=1:length(Cartoon)
+    for j=1:length(wordvalence)
+        ImageSequences=Shuffle(ImageSequences);
+        ShuffledImgSeq{i,j}=ImageSequences;
+    end
+end
+
+% load all images
+Prefix=['P' 'N'];
+Wordwindow=cell(length(wordvalence), length(ImgSeq));
+for i=1:length(wordvalence)
+    for j=1:length(ImgSeq)
+        ImgFile=sprintf('word\\%c%d.bmp',Prefix(i), j);
+        Wordwindow{i,j}=Screen('MakeTexture', windowPtr, imread(ImgFile));
+    end
+end
+
+stimseq=zeros(ntrials*length(Cartoon)*length(wordvalence),2);
+
+factor1=reshape(repmat([Cartoon], length(wordvalence),1), length(Cartoon)*length(wordvalence),1 );
+factor2=repmat([wordvalence]', length(Cartoon),1);
+
+stimseq(:,1)=repmat(factor1,ntrials,1);
+stimseq(:,2)=repmat(factor2,ntrials,1);
+
+stimseq=stimseq(Shuffle(1:size(stimseq,1)),:);
+
+while 1
+    found=0;
+    index=ones(length(Cartoon), length(wordvalence));
+    for trial=1:size(stimseq,1)-1
+        HorV=stimseq(trial,1);
+        PorN=stimseq(trial,2);
+        NextHorV=stimseq(trial+1,1);
+        NextPorN=stimseq(trial+1,2);
+        CurIdx=index(HorV,PorN);
+        index(HorV, PorN)=index(HorV, PorN)+1;
+        NextIdx=index(NextHorV,NextPorN);
+        
+        % if same type and same img, find it
+        if PorN==NextPorN && ShuffledImgSeq{HorV, PorN}(CurIdx)==ShuffledImgSeq{NextHorV, NextPorN}(NextIdx)
+            found=1;
+            break;
+        end        
+    end
+    
+    if found==1
+        % found, re-shuffle the seq
+        stimseq=stimseq(Shuffle(1:size(stimseq,1)),:);
+    else
+        % not found, exit
+        break;
+    end
+end
+
+results=zeros(size(stimseq,1),4);
+
+cartoonduration=1; %second
+isiduration=0.1; %second
+waittime=3; %second
+
+%% Show stimuli
+HideCursor;
+Screen(windowPtr,'FillRect',gray);
+Screen('Flip', windowPtr);
+introwin=Screen('MakeTexture', windowPtr, imread('intro.bmp'));
+intro=['Press space key to start ...'];
+message=ShowInstruction(windowPtr, rect, intro, spaceKey, gray, white,introwin);
+if message==1
+    Screen('CloseAll');
+    return
+end
+
+oldPriority=Priority(MaxPriority(windowPtr));
+Screen('DrawTexture',windowPtr,defaultwin);
+vbl=Screen('Flip',windowPtr);
+
+taroffset=0;
+index=ones(length(Cartoon), length(wordvalence));
+for trial=1:size(stimseq,1)
+    HorV=stimseq(trial,1);
+    PorN=stimseq(trial,2);
+    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('Flip',windowPtr);
+    
+	img=Wordwindow{PorN, ShuffledImgSeq{HorV, PorN}(index(HorV,PorN))};
+    
+    WaitSecs(1);
+    results(trial,1:2)=stimseq(trial,1:2);  
+    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    vbl = Screen('Flip',windowPtr); 
+    
+    %show Cartoon
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture',windowPtr,targetwin(stimseq(trial,1)),[],OffsetRect(tarrect,taroffset,0));    
+    vbl = Screen('Flip',windowPtr);  
+    
+    %isi
+    Screen('DrawTexture',windowPtr,defaultwin);
+    vbl = Screen('Flip',windowPtr,vbl + (fps*cartoonduration-0.5)*ifi);  
+    
+    %show word    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    Screen('DrawTexture', windowPtr, img);   
+    vbl = Screen('Flip',windowPtr,vbl + (fps*isiduration-0.5)*ifi); 
+    trialtime=GetSecs;
+   
+    while ~(touch==1 && (keyCode(Key1) || keyCode(Key2) || keyCode(escapeKey)))
+        % check if time out
+        time = GetSecs;
+        if (time-trialtime)>waittime
+            break;
+        end
+        
+        [touch, secs, keyCode] = KbCheck;
+    end
+    
+    Screen('DrawTexture',windowPtr,defaultwin);
+    vbl=Screen('Flip',windowPtr);
+    
+    index(HorV,PorN)=index(HorV,PorN)+1;
+    
+    if (keyCode(Key1) && stimseq(trial,2)==1) || (keyCode(Key2) && stimseq(trial,2)==2) %
+        results(trial,3)=1;%ACC
+        results(trial,4)=secs-trialtime;%RT
+    elseif keyCode(escapeKey)
+        fprintf('quitting program by user!\n');
+        break;
+    else
+        results(trial,4)=secs-trialtime;
+    end
+    touch=0;
+    
+    if mod(trial,60)==0 && trial~=size(stimseq,1)
+        msg=['Take a break and press space key to continue ...'];
+        errinfo=ShowInstruction_UMNVAL(windowPtr, rect, msg, spaceKey, gray, white, -200);
+        if errinfo==1
+            ShowCursor;
+            Screen('CloseAll');
+            return
+        end
+        Screen('DrawTexture',windowPtr,defaultwin);
+        vbl=Screen('Flip',windowPtr);
+    end
+end
+
+Priority(oldPriority);
+ShowCursor;
+Screen('CloseAll');
+datafile=sprintf('Data\\%s_%s_%s',subject,mfilename,datestr(now,30));
+save(datafile,'results','stimseq','ntrials');
+AffectivePriming_Analysis(datafile);
+return
